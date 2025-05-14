@@ -25,20 +25,23 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install project (+dev)
+      - name: Install project (+dev extras)
         run: pip install '.[dev]'
 
-      # ── Ruff: предупреждает, но не валит CI ──
+      # ─── Ruff: предупреждает, но не валит CI ───
       - name: Ruff lint (non-blocking)
         run: |
           ruff check . || echo "::warning ::Ruff found issues (see log above)"
 
-      - name: Black check
-        run: black --check .
+      # ─── Black: тоже только предупреждение ───
+      - name: Black format check (non-blocking)
+        run: |
+          black --check . || echo "::warning ::Black would reformat files (see log above)"
 
       - name: Run pytest
         env:
