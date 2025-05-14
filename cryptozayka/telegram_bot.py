@@ -1,9 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-CryptoZayka Telegram bot
-✓ RU-/EN-меню
+CryptoZayka Telegram-bot
+────────────────────────
+✓ RU / EN меню
 ✓ /start с inline-кнопкой «🦊 Отправить проект»
-✓ /project принимает JSON
+✓ Отправка JSON-проекта текстом *или* командой /project {...}
+✓ /stats показывает токены за текущий месяц
+✓ /status — здоровье backend
+
+Минимум зависимостей: python-telegram-bot 21.*
 """
 from __future__ import annotations
 
@@ -22,47 +27,58 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
-    CommandHandler,
     CallbackQueryHandler,
-    MessageHandler,
+    CommandHandler,
     ContextTypes,
+    MessageHandler,
     filters,
 )
 
-# ───────── config ──────────────────────────────────────────
+# ───────── config ───────────────────────────────────────────
 API_URL: Final[str] = os.getenv("ZAYKA_API", "http://zayka:8000")
-TOKEN:    Final[str | None] = os.getenv("TELEGRAM_TOKEN")
+TOKEN: Final[str | None] = os.getenv("TELEGRAM_TOKEN")
 
 log = logging.getLogger(__name__)
 
 # ───────── HTTP helpers ────────────────────────────────────
+_SESS: aiohttp.ClientSession | None = None
+
+
+async def _session() -> aiohttp.ClientSession:
+    global _SESS
+    if _SESS is None or _SESS.closed:
+        _SESS = aiohttp.ClientSession()
+    return _SESS
+
+
 async def _post(path: str, payload: Any) -> Any:
-    async with aiohttp.ClientSession() as s:
-        async with s.post(f"{API_URL}{path}", json=payload, timeout=30) as r:
-            r.raise_for_status()
-            return await r.json()
+    s = await _session()
+    async with s.post(f"{API_URL}{path}", json=payload, timeout=30) as r:
+        r.raise_for_status()
+        return await r.json()
 
 
 async def _get(path: str) -> Any:
-    async with aiohttp.ClientSession() as s:
-        async with s.get(f"{API_URL}{path}", timeout=10) as r:
-            r.raise_for_status()
-            return await r.json()
+    s = await _session()
+    async with s.get(f"{API_URL}{path}", timeout=10) as r:
+        r.raise_for_status()
+        return await r.json()
 
 
-# ───────── inline keyboard ─────────────────────────────────
+# ───────── inline keyboard ──────────────────────────────────
 KB_START = InlineKeyboardMarkup.from_button(
     InlineKeyboardButton("🦊 Отправить проект", callback_data="send_project")
 )
 
-# ───────── command handlers ────────────────────────────────
+# ───────── command handlers ─────────────────────────────────
 async def cmd_start(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
         await update.message.reply_text(
             "Привет! Я оцениваю крипто-проекты.\n"
-            "Нажмите кнопку или воспользуйтесь /project.",
+            "Нажмите кнопку или отправьте /project {json}.",
             reply_markup=KB_START,
         )
 
@@ -77,9 +93,14 @@ async def cmd_help(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 ERR_EXAMPLE = (
-    "⚠️ пример:\n"
-    "/project {\"name\":\"LayerZero\",\"description\":\"Cross-chain protocol\"}"
+    "⚠️ пример valid JSON:\n"
+    '`[{"name":"LayerZero","description":"Cross-chain protocol"}]`'
 )
+
+
+async def _submit_projects(chat_send, projects: list[dict[str, Any]]) -> None:
+    resp = await _post("/batch/submit", projects)
+    await chat_send(f"✅ Batch #{resp['batch_id']} accepted")
 
 
 async def cmd_project(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
@@ -92,14 +113,14 @@ async def cmd_project(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text(ERR_EXAMPLE)
         return
 
-    resp = await _post("/batch/submit", [proj])
-    await update.message.reply_text(f"✅ batch #{resp['batch_id']} accepted")
+    await _submit_projects(update.message.reply_text, [proj])
 
 
 async def cmd_stats(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    stats = await _get("/stats/tokens")
-    month = datetime.utcnow().strftime("%Y-%m")
-    await update.message.reply_text(f"📊 {month}: {stats.get(month, 0)} токенов")
+    data = await _get("/stats/tokens")
+    await update.message.reply_text(
+        f"📊 {data['month']}: {data['tokens_used']} токенов"
+    )
 
 
 async def cmd_status(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -117,17 +138,32 @@ async def unknown(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         await update.message.reply_text("🤔 не знаю такой команды. /help")
 
 
-# ───────── callback handler ────────────────────────────────
+# ───────── callback handler ─────────────────────────────────
 async def cb_send_project(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.callback_query:
         return
     await update.callback_query.answer()
     await update.callback_query.message.reply_text(
-        "Пришлите JSON следующего вида:\n" + ERR_EXAMPLE
+        "Пришлите JSON-список проектов, например:\n" + ERR_EXAMPLE,
+        parse_mode=ParseMode.MARKDOWN,
     )
 
 
-# ───────── меню ────────────────────────────────────────────
+# ───────── text-handler: JSON payload ───────────────────────
+async def on_text(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+    if not update.message:
+        return
+    try:
+        projects = json.loads(update.message.text)
+        assert isinstance(projects, list) and projects
+        assert all(isinstance(p, dict) for p in projects)
+    except Exception:
+        return  # не JSON — игнорируем
+
+    await _submit_projects(update.message.reply_text, projects)
+
+
+# ───────── меню ─────────────────────────────────────────────
 CMDS_RU = [
     BotCommand("project", "Проект"),
     BotCommand("stats", "Статистика"),
@@ -149,7 +185,7 @@ async def _set_menu(app: Application) -> None:
     await app.bot.set_my_commands(CMDS_EN, scope=BotCommandScopeDefault())
 
 
-# ───────── main ────────────────────────────────────────────
+# ───────── main ─────────────────────────────────────────────
 def run_bot() -> None:
     if not TOKEN:
         raise RuntimeError("TELEGRAM_TOKEN env var not set")
@@ -172,7 +208,10 @@ def run_bot() -> None:
     # callbacks
     app.add_handler(CallbackQueryHandler(cb_send_project, pattern="^send_project$"))
 
-    # unknown
+    # text JSON payload
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+
+    # unknown commands
     app.add_handler(MessageHandler(filters.COMMAND, unknown))
 
     # set menu after bot is ready
