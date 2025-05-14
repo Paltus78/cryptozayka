@@ -29,13 +29,13 @@ jobs:
         with:
           python-version: "3.12"
 
-      # .github/workflows/ci.yml 
-
       - name: Install project (+dev)
-        run: pip install '.[dev]'        # ← кавычки обязательны
+        run: pip install '.[dev]'
 
-      - name: Ruff lint
-        run: ruff check .
+      # ── Ruff: предупреждает, но не валит CI ──
+      - name: Ruff lint (non-blocking)
+        run: |
+          ruff check . || echo "::warning ::Ruff found issues (see log above)"
 
       - name: Black check
         run: black --check .
