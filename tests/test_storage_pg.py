@@ -1,16 +1,22 @@
 import os
-# ── окружение, чтобы Settings валидировался ──
-os.environ.setdefault("ETH_RPC_URL", "https://dummy.rpc")
-os.environ.setdefault("OPENAI_API_KEY", "sk-test")
-os.environ.setdefault("TELEGRAM_ADMIN_CHAT", "0")
+
+# ── окружение для Settings + правильный хост БД ──
+env = {
+    "ETH_RPC_URL": "https://dummy.rpc",
+    "OPENAI_API_KEY": "sk-test",
+    "TELEGRAM_ADMIN_CHAT": "0",
+    "POSTGRES_HOST": "localhost",
+    "POSTGRES_PORT": "5432",
+}
+os.environ.update(env)
 
 import json
 import pytest
-
+import pytest_asyncio
 from cryptozayka.storage.pg import get_pool, add_batch, next_batch, mark_batch
 
 
-@pytest.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session")
 async def pool():
     p = await get_pool()
     try:
