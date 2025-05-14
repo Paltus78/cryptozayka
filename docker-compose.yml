@@ -1,0 +1,73 @@
+# docker-compose.yml ― полный, рабочий
+services:
+  # ─────────────── PostgreSQL ───────────────
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER:-zayka}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+      POSTGRES_DB:       ${POSTGRES_DB:-zayka}
+    ports:
+      - "55432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-zayka}"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ─────────────── LLaMA server ────────────
+  llama:
+    image: ghcr.io/ggerganov/llama.cpp:server
+    command: ["-m", "/models/ggml-model.gguf", "-c", "2048", "-ngl", "32"]
+    expose:
+      - "8080"
+    volumes:
+      - ./models:/models:ro           # положите модель .gguf сюда
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ─────────────── FastAPI + worker ────────
+  zayka:
+    build: .
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        alembic upgrade head
+        uvicorn cryptozayka.api:app --host 0.0.0.0 --port 8000
+    environment:
+      POSTGRES_DSN: postgresql://${POSTGRES_USER:-zayka}:${POSTGRES_PASSWORD:-secret}@db:5432/${POSTGRES_DB:-zayka}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      llama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+
+  # ─────────────── Telegram bot ────────────
+  bot:
+    build: .
+    command: python -m cryptozayka.telegram_bot
+    environment:
+      ZAYKA_API:           http://zayka:8000
+      TELEGRAM_TOKEN:      ${TELEGRAM_TOKEN}
+      TELEGRAM_ADMIN_CHAT: ${TELEGRAM_ADMIN_CHAT}
+    depends_on:
+      zayka:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

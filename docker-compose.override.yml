@@ -1,0 +1,57 @@
+services:
+  # ────────────────────────── Monitoring stack ─────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro     # ← fixed
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.external-url=/
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./deploy/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+
+  # ────────────────────────── Gas price exporter ───────────────────────
+  gas-exporter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python -m cryptozayka.monitoring.gas_exporter
+    environment:
+      - ETH_RPC_URL=${ETH_RPC_URL}
+      - GAS_PRICE_GWEI=${GAS_PRICE_GWEI:-25}
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9102/metrics || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  grafana-data:
