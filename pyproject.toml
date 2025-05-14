@@ -6,9 +6,7 @@ build-backend = "hatchling.build"
 name = "cryptozayka"
 version = "0.1.0"
 description = "Async on-chain airdrop automation framework"
-authors = [
-  { name = "CryptoZayka Team", email = "dev@cryptozayka.io" }
-]
+authors = [{ name = "CryptoZayka Team", email = "dev@cryptozayka.io" }]
 readme = "README.md"
 requires-python = ">=3.11"
 
@@ -34,11 +32,17 @@ dev = [
 [project.scripts]
 cryptozayka = "cryptozayka.cli:app"
 
+# ───────── Formatter / Linter ─────────
 [tool.black]
 line-length = 88
 target-version = ["py311"]
 
 [tool.ruff]
 line-length = 88
+
+[tool.ruff.lint]
 select = ["E", "F", "B", "I"]
-exclude = ["alembic", "models"]
+
+# игнорируем придирки к однострочным конструкциям и длинным строкам в тестах
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E401", "E501", "E701", "I001"]
