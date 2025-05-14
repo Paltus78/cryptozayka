@@ -1,27 +1,41 @@
 import os
-# ── окружение, чтобы Settings валидировался ──
+
+# ── окружение для Settings + правильный DSN ────────────────────
 os.environ.setdefault("ETH_RPC_URL", "https://dummy.rpc")
 os.environ.setdefault("OPENAI_API_KEY", "sk-test")
 os.environ.setdefault("TELEGRAM_ADMIN_CHAT", "0")
+os.environ.setdefault(
+    "POSTGRES_DSN", "postgresql://zayka:secret@localhost:5432/zayka"
+)
 
 import json
 import pytest
-from unittest.mock import AsyncMock, patch
+import pytest_asyncio
 
-from cryptozayka.core.strategy import analyze_project, Verdict
+from cryptozayka.storage.pg import get_pool, add_batch, next_batch, mark_batch
+
+
+@pytest_asyncio.fixture(scope="session")
+async def pool():
+    p = await get_pool()
+    try:
+        yield p
+    finally:
+        await p.close()
 
 
 @pytest.mark.asyncio
-async def test_analyze_project_green():
-    async def fake_call(prompt: str):
-        return json.dumps({"verdict": "green", "explanation": "Ok"}), 100
+async def test_batch_flow(pool):
+    payload = [{"name": "Demo", "description": "Desc"}]
+    bid = await add_batch(payload)
+    picked = await next_batch()
+    assert picked == bid
 
-    with patch(
-        "cryptozayka.core.strategy._call_gpt",
-        new=AsyncMock(side_effect=fake_call),
-    ):
-        res = await analyze_project("LayerZero", "Cross-chain")
+    await mark_batch(bid, ok=True)
 
-    assert res.verdict is Verdict.GREEN
-    assert res.tokens == 100
-
+    async with pool.acquire() as c:
+        row = await c.fetchrow(
+            "SELECT status, payload FROM batches WHERE id=$1", bid
+        )
+    assert row["status"] == "done"
+    assert json.loads(row["payload"]) == payload
