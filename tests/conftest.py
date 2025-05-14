@@ -1,15 +1,19 @@
+import os
 import pytest
 
-@pytest.fixture(autouse=True)
-def no_real_gpt(monkeypatch):
-    """Mock chat completion to avoid external OpenAI calls."""
-    from cryptozayka.core import gpt_client
 
-    async def _fake_chat(messages, *, model="gpt-4o-mini", **kwargs):
-        # simple heuristic reply based on project mention
-        user_content = " ".join(m["content"] for m in messages if m["role"] == "user").lower()
-        if "scamchain" in user_content:
-            return "Это откровенный скам. Не участвовать."
-        return "Проект выглядит перспективным, риски умеренные. Рекомендуется участвовать."
+@pytest.fixture(autouse=True, scope="session")
+def _patch_env_for_settings():
+    """
+    Подставляет минимальный набор переменных, чтобы Settings() валидировался
+    во время тестов. Работает автоматически для всей тест-сессии.
+    """
+    orig = os.environ.copy()
+    os.environ.setdefault("ETH_RPC_URL", "https://dummy.rpc")
+    os.environ.setdefault("OPENAI_API_KEY", "sk-test")
+    os.environ.setdefault("TELEGRAM_ADMIN_CHAT", "0")
 
-    monkeypatch.setattr(gpt_client, "chat", _fake_chat)
+    yield
+    # восстанавливаем окружение
+    os.environ.clear()
+    os.environ.update(orig)
