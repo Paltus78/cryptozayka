@@ -1,24 +1,28 @@
 import os
 
-# ── окружение для Settings (без БД) ──
-env = {
-    "ETH_RPC_URL": "https://dummy.rpc",
-    "OPENAI_API_KEY": "sk-test",
-    "TELEGRAM_ADMIN_CHAT": "0",
-    "POSTGRES_HOST": "localhost",
-    "POSTGRES_PORT": "5432",
-}
-os.environ.update(env)
+# ── окружение, чтобы Settings прошёл в тестах ────────────────
+os.environ.update(
+    {
+        "ETH_RPC_URL": "https://dummy.rpc",
+        "OPENAI_API_KEY": "sk-test",
+        "TELEGRAM_ADMIN_CHAT": "0",
+        "POSTGRES_HOST": "localhost",
+        "POSTGRES_PORT": "5432",
+    }
+)
 
 import json
 import pytest
 from unittest.mock import AsyncMock, patch
+
 from cryptozayka.core.strategy import analyze_project, Verdict
 
 
 @pytest.mark.asyncio
-async def test_analyze_project_green():
-    async def fake_call(prompt: str):
+async def test_analyze_project_green() -> None:
+    """GPT-модуль вернул «green» → стратегия отдаёт Verdict.GREEN."""
+
+    async def fake_call(_: str):
         return json.dumps({"verdict": "green", "explanation": "Ok"}), 100
 
     with patch(
