@@ -1,6 +1,5 @@
 import os
 
-# ── окружение, чтобы Settings прошёл в тестах ────────────────
 os.environ.update(
     {
         "ETH_RPC_URL": "https://dummy.rpc",
@@ -19,9 +18,7 @@ from cryptozayka.core.strategy import analyze_project, Verdict
 
 
 @pytest.mark.asyncio
-async def test_analyze_project_green() -> None:
-    """GPT-модуль вернул «green» → стратегия отдаёт Verdict.GREEN."""
-
+async def test_analyze_project_green():
     async def fake_call(_: str):
         return json.dumps({"verdict": "green", "explanation": "Ok"}), 100
 
