@@ -1,6 +1,6 @@
 import os
 
-# ── окружение для Settings + корректный хост БД ──────────────
+# ── окружение для Settings + корректный хост БД ───────────────
 os.environ.update(
     {
         "ETH_RPC_URL": "https://dummy.rpc",
@@ -15,42 +15,38 @@ import json
 import pytest
 import pytest_asyncio
 
-from cryptozayka.storage.pg import (
-    get_pool,
-    add_batch,
-    next_batch,
-    mark_batch,
-)
+import cryptozayka.storage.pg as pg_mod  # импорт модуля, который патчим
 
 
-@pytest_asyncio.fixture  # function-scope (один loop – один pool)
+@pytest_asyncio.fixture(scope="session")
 async def pool():
-    p = await get_pool()
+    """Создаём один pool и заставляем весь модуль pg использовать его."""
+    p = await pg_mod.get_pool()  # создаст pool в этом же loop
+    pg_mod._POOL = p             # фиксируем singleton
+    pg_mod.get_pool = lambda *_: p  # type: ignore[assignment]
+
     try:
         yield p
     finally:
         await p.close()
-        # сбрасываем singleton, чтобы следующий тест создал новый pool
-        import cryptozayka.storage.pg as _pg
-
-        _pg._POOL = None
 
 
+# ──────────────────────────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_batch_flow(pool) -> None:
+async def test_batch_flow(pool):
     """add_batch → next_batch → mark_batch — happy path."""
 
     payload = [{"name": "Demo", "description": "Desc"}]
 
-    batch_id = await add_batch(payload)
-    picked = await next_batch()
-    assert picked == batch_id
+    bid = await pg_mod.add_batch(payload)
+    picked = await pg_mod.next_batch()
+    assert picked == bid
 
-    await mark_batch(batch_id, ok=True)
+    await pg_mod.mark_batch(bid, ok=True)
 
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT status, payload FROM batches WHERE id=$1", batch_id
+            "SELECT status, payload FROM batches WHERE id=$1", bid
         )
 
     assert row["status"] == "done"
