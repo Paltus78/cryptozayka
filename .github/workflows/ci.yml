@@ -29,8 +29,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      # .github/workflows/ci.yml 
+
       - name: Install project (+dev)
-        run: pip install .[dev]
+        run: pip install '.[dev]'        # ← кавычки обязательны
 
       - name: Ruff lint
         run: ruff check .
