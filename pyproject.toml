@@ -11,6 +11,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 
 dependencies = [
+  "asyncpg>=0.29",               # ← NEW
+  "pydantic-settings>=2.2",      # ← NEW
   "aiosqlite>=0.20",
   "pydantic>=2.7",
   "typer[all]>=0.12",
@@ -41,11 +43,8 @@ target-version = ["py311"]
 line-length = 88
 
 [tool.ruff.lint]
-# Проверяем только классы ошибок E и F (pep8 + runtime)
-select = ["E", "F"]
-# Игнорируем длинные строки, однострочные блоки и несортированные импорты
-ignore = ["E501", "E701", "I001"]
+select  = ["E", "F"]                 # критичные ошибки
+ignore  = ["E501", "E701", "I001"]   # длинные строки, one-liner, импорты
 
-# Тесты могут содержать ещё больше вольностей
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501", "E701", "I001", "E401"]
